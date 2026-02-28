@@ -4,7 +4,7 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -16,9 +16,9 @@ services:
           type: redis
           property: connectionString
       - key: STORAGE_MODE
-        value: s3
-      - key: AWS_REGION
-        value: eu-west-2
+        value: local
+      - key: LOCAL_STORAGE_PATH
+        value: ./data/storage
 
   - type: redis
     name: tally-redis
@@ -29,7 +29,7 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: rq worker --url $REDIS_URL
+    startCommand: python -m app.worker
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -40,6 +40,10 @@ services:
           name: tally-redis
           type: redis
           property: connectionString
+      - key: STORAGE_MODE
+        value: local
+      - key: LOCAL_STORAGE_PATH
+        value: ./data/storage
 
 databases:
   - name: tally-postgres
