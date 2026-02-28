@@ -38,7 +38,7 @@ export default function ImportPage() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
         <div className="flex flex-wrap gap-2">
           {uploadSteps.map((step, index) => (
-            <Badge key={step} color={index < 3 ? 'zinc' : 'dark/zinc'}>
+            <Badge key={step} color={index < 3 ? 'zinc' : 'indigo'}>
               {index + 1}. {step}
             </Badge>
           ))}

@@ -7,6 +7,9 @@ export const metadata: Metadata = {
     template: '%s | Tally',
   },
   description: 'Deterministic payroll reconciliation and audit-ready close packs for UK and Ireland payroll bureaus.',
+  icons: {
+    icon: '/logo.ico',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

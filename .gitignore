@@ -6,6 +6,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.venv*/
 .pytest_cache/
 
 # Node
@@ -18,6 +19,7 @@ out/
 backend/data/
 frontend/tests/visual/snapshots/
 !frontend/tests/visual/snapshots/.gitkeep
+.playwright-cli/
 
 # Env
 .env
