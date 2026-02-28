@@ -2,7 +2,7 @@
 
 import {
   Bars3Icon,
-  MagnifyingGlassIcon,
+  PlusCircleIcon,
 } from '@heroicons/react/20/solid'
 import { usePathname } from 'next/navigation'
 
@@ -23,6 +23,7 @@ import {
   SidebarLabel,
   SidebarSection,
 } from '@/components/catalyst/sidebar'
+import { Button } from '@/components/ui'
 import { SidebarLayout } from '@/components/catalyst/sidebar-layout'
 import { appNavigation } from '@/lib/navigation'
 
@@ -43,8 +44,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </NavbarSection>
           <NavbarSpacer />
           <NavbarSection>
-            <NavbarItem href="/app/workflow" aria-label="Open guided run">
-              <MagnifyingGlassIcon />
+            <NavbarItem href="/app?newRun=1" aria-label="Start new run">
+              <PlusCircleIcon />
             </NavbarItem>
             <NavbarItem href="/app/setup">
               <Avatar initials="RP" />
@@ -59,6 +60,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="px-2">
               <p className="text-xs font-semibold tracking-wide text-zinc-500">TALLY</p>
               <p className="text-sm font-semibold text-zinc-950 dark:text-white">Payroll Reconciliation</p>
+            </div>
+            <div className="px-2 pt-3">
+              <Button href="/app?newRun=1" color="dark/zinc" className="w-full justify-center">
+                Start New Run
+              </Button>
             </div>
           </SidebarHeader>
           <SidebarBody>
