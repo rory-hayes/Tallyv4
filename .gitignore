@@ -14,6 +14,9 @@ node_modules/
 frontend/node_modules/
 .next/
 out/
+frontend/.vercel/
+frontend/test-results/
+output/
 
 # Runtime data
 backend/data/
