@@ -28,3 +28,12 @@ test('capture guided workflow snapshot', async ({ page }) => {
   await page.screenshot({ path: filePath, fullPage: true })
   expect(fs.existsSync(filePath)).toBeTruthy()
 })
+
+test('capture dashboard snapshot', async ({ page }) => {
+  ensureDir()
+  await page.goto('/app')
+  await page.setViewportSize({ width: 1440, height: 1080 })
+  const filePath = path.join(snapshotDir, 'dashboard.png')
+  await page.screenshot({ path: filePath, fullPage: true })
+  expect(fs.existsSync(filePath)).toBeTruthy()
+})

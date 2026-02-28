@@ -43,6 +43,8 @@ import {
   type ExportPackResponse,
 } from '@/lib/api'
 import { formatDate, formatEUR, formatGBP } from '@/lib/format'
+import { patchRunHistory, upsertRunHistory } from '@/lib/run-history'
+import { loadSession, persistSession as persistSessionStorage, type SessionState } from '@/lib/session'
 import {
   Badge,
   Button,
@@ -65,12 +67,6 @@ import {
 } from '@/components/ui'
 
 type CurrencyCode = 'GBP' | 'EUR'
-
-type SessionState = {
-  email: string
-  accessToken: string
-  expiresAt: string
-}
 
 type RunContextState = {
   firmName: string
@@ -96,7 +92,6 @@ type Notice = {
   message: string
 }
 
-const SESSION_STORAGE_KEY = 'tally.session.v2'
 const SOURCE_ORDER: SourceFileType[] = ['Payroll', 'Bank', 'GL']
 
 const SOURCE_LABELS: Record<SourceFileType, string> = {
@@ -192,20 +187,10 @@ export default function RunWorkflowPage() {
   const [notice, setNotice] = useState<Notice | null>(null)
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY)
-    if (!raw) return
-
-    try {
-      const parsed = JSON.parse(raw) as SessionState
-      if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() > Date.now()) {
-        setSession(parsed)
-        setAuthEmail(parsed.email)
-      } else {
-        window.localStorage.removeItem(SESSION_STORAGE_KEY)
-      }
-    } catch {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY)
+    const existing = loadSession()
+    if (existing) {
+      setSession(existing)
+      setAuthEmail(existing.email)
     }
   }, [])
 
@@ -260,15 +245,9 @@ export default function RunWorkflowPage() {
     ]
   }, [blockers.length, exportPack, importsReady, reconcileRecord, runRecord, session])
 
-  function persistSession(nextSession: SessionState | null) {
+  function updateSession(nextSession: SessionState | null) {
     setSession(nextSession)
-    if (typeof window === 'undefined') return
-
-    if (nextSession) {
-      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(nextSession))
-    } else {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY)
-    }
+    persistSessionStorage(nextSession)
   }
 
   async function handleStartSession() {
@@ -285,7 +264,7 @@ export default function RunWorkflowPage() {
       const token = extractTokenFromMagicLink(requested.magic_link)
       const verified: AccessTokenResponse = await verifyMagicLink(token)
 
-      persistSession({
+      updateSession({
         email: verified.user.email,
         accessToken: verified.access_token,
         expiresAt: verified.expires_at,
@@ -345,6 +324,22 @@ export default function RunWorkflowPage() {
       setVarianceNotes({})
       setExportPack(null)
       setExportDownloadUrl(null)
+
+      upsertRunHistory({
+        runId: run.id,
+        clientId: client.id,
+        clientName: client.name,
+        firmName: context.firmName.trim(),
+        countryPack: context.countryPack,
+        currency: context.currency,
+        payDate: run.pay_date,
+        payPeriodStart: run.pay_period_start,
+        payPeriodEnd: run.pay_period_end,
+        status: run.status,
+        createdAt: run.created_at,
+        updatedAt: run.updated_at,
+        hasExportPack: false,
+      })
 
       setNotice({ tone: 'success', message: `Run ${run.id.slice(0, 8)} created. Upload source files next.` })
     } catch (error) {
@@ -445,6 +440,7 @@ export default function RunWorkflowPage() {
     setRunRecord(updatedRun)
     setSummary(nextSummary)
     setVariances(nextVariances)
+    patchRunHistory(runId, { status: updatedRun.status, updatedAt: updatedRun.updated_at })
   }
 
   async function handleReconcile() {
@@ -570,6 +566,7 @@ export default function RunWorkflowPage() {
 
       const submitted = await submitRunForReview(runRecord.id, 'Submitted from guided reconciliation workflow.', accessToken)
       setRunRecord(submitted)
+      patchRunHistory(runRecord.id, { status: submitted.status, updatedAt: submitted.updated_at })
       setNotice({ tone: 'success', message: 'Run submitted for reviewer approval.' })
     } catch (error) {
       setNotice({ tone: 'error', message: getErrorMessage(error) })
@@ -590,6 +587,7 @@ export default function RunWorkflowPage() {
 
       const approved = await approveRun(runRecord.id, 'Approved from guided reconciliation workflow.', accessToken)
       setRunRecord(approved)
+      patchRunHistory(runRecord.id, { status: approved.status, updatedAt: approved.updated_at })
       await refreshReconciliationViews(runRecord.id, accessToken)
       setNotice({ tone: 'success', message: `Run approved. Current status: ${approved.status}.` })
     } catch (error) {
@@ -614,6 +612,7 @@ export default function RunWorkflowPage() {
 
       setExportPack(pack)
       setExportDownloadUrl(download.download_url)
+      patchRunHistory(runRecord.id, { hasExportPack: true })
       setNotice({ tone: 'success', message: 'Audit pack generated successfully.' })
     } catch (error) {
       setNotice({ tone: 'error', message: getErrorMessage(error) })
@@ -686,7 +685,7 @@ export default function RunWorkflowPage() {
           <Button color="dark/zinc" disabled={authLoading} onClick={handleStartSession}>
             {authLoading ? 'Starting session...' : 'Start secure session'}
           </Button>
-          <Button outline onClick={() => persistSession(null)}>
+          <Button outline onClick={() => updateSession(null)}>
             Clear session
           </Button>
           {session ? (
