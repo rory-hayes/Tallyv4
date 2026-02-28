@@ -125,6 +125,18 @@ def _lookup_column(headers: list[str], candidates: tuple[str, ...]) -> tuple[str
     return None, 0.0
 
 
+def _confidence_for_schema(schema: SchemaType, field_confidences: dict[str, float]) -> float:
+    required_fields = SCHEMA_REQUIRED_FIELDS[schema]
+    required_scores = [field_confidences.get(field, 0.0) for field in required_fields]
+    required_average = sum(required_scores) / max(len(required_scores), 1)
+
+    optional_scores = [score for field, score in field_confidences.items() if field not in required_fields and score > 0]
+    optional_average = sum(optional_scores) / len(optional_scores) if optional_scores else 0.0
+    optional_bonus = min(0.08, optional_average * 0.08)
+
+    return round(min(0.99, required_average + optional_bonus), 4)
+
+
 def detect_schema(parsed: ParsedFile, source_type: SourceFileType | None = None) -> tuple[SchemaType | None, float, list[str]]:
     headers = parsed.headers
     if not headers:
@@ -132,29 +144,29 @@ def detect_schema(parsed: ParsedFile, source_type: SourceFileType | None = None)
 
     if source_type and source_type in SOURCE_TO_SCHEMA:
         schema = SOURCE_TO_SCHEMA[source_type]
-        scores = []
+        field_confidences: dict[str, float] = {}
         reasons: list[str] = []
         for field, candidates in SCHEMA_SYNONYMS[schema].items():
             column, confidence = _lookup_column(headers, candidates)
             if column:
                 reasons.append(f"Detected {field} from '{column}'")
-            scores.append(confidence)
-        return schema, round(sum(scores) / max(len(scores), 1), 4), reasons
+            field_confidences[field] = confidence
+        return schema, _confidence_for_schema(schema, field_confidences), reasons
 
     schema_scores: dict[SchemaType, float] = {}
     schema_reasons: dict[SchemaType, list[str]] = defaultdict(list)
 
     for schema, synonyms in SCHEMA_SYNONYMS.items():
-        scores: list[float] = []
+        field_confidences: dict[str, float] = {}
         for field, candidates in synonyms.items():
             column, confidence = _lookup_column(headers, candidates)
             if column:
                 schema_reasons[schema].append(f"{field} matched with '{column}'")
-            scores.append(confidence)
-        schema_scores[schema] = sum(scores) / max(len(scores), 1)
+            field_confidences[field] = confidence
+        schema_scores[schema] = _confidence_for_schema(schema, field_confidences)
 
     best_schema = max(schema_scores, key=schema_scores.get)
-    best_score = round(schema_scores[best_schema], 4)
+    best_score = schema_scores[best_schema]
 
     if best_score < 0.35:
         return None, best_score, ["Could not confidently infer schema"]
@@ -165,7 +177,7 @@ def detect_schema(parsed: ParsedFile, source_type: SourceFileType | None = None)
 def suggest_mapping(parsed: ParsedFile, schema_type: SchemaType) -> tuple[dict[str, Any], float, dict[str, bool]]:
     headers = parsed.headers
     mapping: dict[str, Any] = {}
-    confidences: list[float] = []
+    field_confidences: dict[str, float] = {}
     required_fields = SCHEMA_REQUIRED_FIELDS[schema_type]
     required_status: dict[str, bool] = {}
 
@@ -173,7 +185,7 @@ def suggest_mapping(parsed: ParsedFile, schema_type: SchemaType) -> tuple[dict[s
         column, confidence = _lookup_column(headers, candidates)
         if column is not None:
             mapping[field] = column
-        confidences.append(confidence)
+        field_confidences[field] = confidence
         if field in required_fields:
             required_status[field] = column is not None
 
@@ -184,9 +196,13 @@ def suggest_mapping(parsed: ParsedFile, schema_type: SchemaType) -> tuple[dict[s
         if money_in and money_out:
             mapping["amount"] = {"in": money_in, "out": money_out, "mode": "in_minus_out"}
             required_status["amount"] = True
-            confidences.append(0.94)
+            field_confidences["amount"] = 0.94
 
-    confidence = round(sum(confidences) / max(len(confidences), 1), 4)
+    required_scores = [field_confidences.get(field, 0.0) for field in required_fields]
+    required_average = sum(required_scores) / max(len(required_scores), 1)
+    optional_scores = [score for field, score in field_confidences.items() if field not in required_fields and score > 0]
+    optional_average = sum(optional_scores) / len(optional_scores) if optional_scores else 0.0
+    confidence = round(min(0.99, required_average + min(0.05, optional_average * 0.05)), 4)
     return mapping, confidence, required_status
 
 
@@ -321,7 +337,7 @@ def validate_and_persist_source(db: Session, source_file: SourceFile) -> dict[st
         }
 
     if source_file.schema_type == SchemaType.BANK_TRANSACTIONS:
-        db.execute(delete(BankTransaction).where(BankTransaction.source_file_id == source_file.id))
+        db.execute(delete(BankTransaction).where(BankTransaction.run_id == source_file.run_id))
         for row in normalized_rows:
             db.add(
                 BankTransaction(
@@ -338,7 +354,7 @@ def validate_and_persist_source(db: Session, source_file: SourceFile) -> dict[st
                 )
             )
     elif source_file.schema_type == SchemaType.GL_JOURNAL_LINES:
-        db.execute(delete(JournalLine).where(JournalLine.source_file_id == source_file.id))
+        db.execute(delete(JournalLine).where(JournalLine.run_id == source_file.run_id))
         for row in normalized_rows:
             db.add(
                 JournalLine(
@@ -357,7 +373,7 @@ def validate_and_persist_source(db: Session, source_file: SourceFile) -> dict[st
                 )
             )
     else:
-        db.execute(delete(PayrollSummary).where(PayrollSummary.source_file_id == source_file.id))
+        db.execute(delete(PayrollSummary).where(PayrollSummary.run_id == source_file.run_id))
         gross = sum((row["gross_total"] for row in normalized_rows), Decimal("0"))
         net = sum((row["net_pay_total"] for row in normalized_rows), Decimal("0"))
         employer_taxes = sum((row["employer_taxes"] for row in normalized_rows), Decimal("0"))

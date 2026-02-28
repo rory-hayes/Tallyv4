@@ -171,10 +171,11 @@ function canApproveVariance(status: VarianceStatus): boolean {
 type NewRunWizardModalProps = {
   open: boolean
   onClose: () => void
+  initialRunId?: string | null
   onRunUpdated?: () => void
 }
 
-export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardModalProps) {
+export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpdated }: NewRunWizardModalProps) {
   const defaults = useMemo(() => defaultDates(), [])
   const defaultContext = useMemo<RunContextState>(
     () => ({
@@ -202,6 +203,7 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
 
   const [selectedFiles, setSelectedFiles] = useState<Partial<Record<SourceFileType, File>>>({})
   const [imports, setImports] = useState<Record<SourceFileType, ImportProgress>>(emptyImportState())
+  const [importsRestoredFromRun, setImportsRestoredFromRun] = useState(false)
 
   const [summary, setSummary] = useState<RunSummaryResponse | null>(null)
   const [variances, setVariances] = useState<VarianceResponse[]>([])
@@ -228,6 +230,7 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
     setRunRecord(null)
     setSelectedFiles({})
     setImports(emptyImportState())
+    setImportsRestoredFromRun(false)
     setSummary(null)
     setVariances([])
     setVarianceNotes({})
@@ -237,14 +240,18 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
     setExportDownloadUrl(null)
     setWorking(null)
     setNotice(null)
-  }, [defaultContext, open])
+
+    if (initialRunId && existing?.accessToken) {
+      void hydrateExistingRun(initialRunId, existing.accessToken)
+    }
+  }, [defaultContext, initialRunId, open])
 
   const blockers = useMemo(
     () => variances.filter((item) => item.severity === 'BLOCKER' && item.status !== 'Approved' && item.status !== 'Closed'),
     [variances]
   )
 
-  const importsReady = useMemo(
+  const importsReadyFromUploads = useMemo(
     () =>
       SOURCE_ORDER.every((sourceType) => {
         const entry = imports[sourceType]
@@ -260,6 +267,8 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
       }),
     [imports]
   )
+
+  const importsReady = importsRestoredFromRun || importsReadyFromUploads
 
   const stepCompletion = useMemo(
     () => [
@@ -344,6 +353,7 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
     setSummary(null)
     setVariances([])
     setVarianceNotes({})
+    setImportsRestoredFromRun(false)
     setReviewSubmitted(false)
     setReviewApproved(false)
     setExportPack(null)
@@ -355,6 +365,19 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
       ...current,
       [sourceType]: file ?? undefined,
     }))
+  }
+
+  function clearSourceType(sourceType: SourceFileType) {
+    setSelectedFiles((current) => ({
+      ...current,
+      [sourceType]: undefined,
+    }))
+    setImports((current) => ({
+      ...current,
+      [sourceType]: {},
+    }))
+    resetDownstream()
+    setNotice({ tone: 'info', message: `${sourceType} file cleared. Upload a replacement file to continue.` })
   }
 
   async function refreshReconciliationViews(runId: string, accessToken: string) {
@@ -369,6 +392,48 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
     setVariances(nextVariances)
     patchRunHistory(runId, { status: updatedRun.status, updatedAt: updatedRun.updated_at })
     onRunUpdated?.()
+  }
+
+  async function hydrateExistingRun(runId: string, accessToken: string) {
+    try {
+      setWorking('load-run')
+      setNotice({ tone: 'info', message: `Loading run ${runId.slice(0, 8)}...` })
+
+      const [run, nextSummary, nextVariances] = await Promise.all([
+        getRun(runId, accessToken),
+        getRunSummary(runId, accessToken),
+        listVariances(runId, accessToken),
+      ])
+
+      setRunRecord(run)
+      setSummary(nextSummary)
+      setVariances(nextVariances)
+      setImportsRestoredFromRun(true)
+      setContext((current) => ({
+        ...current,
+        countryPack: run.country_pack,
+        currency: run.currency,
+        payPeriodStart: run.pay_period_start,
+        payPeriodEnd: run.pay_period_end,
+        payDate: run.pay_date,
+      }))
+      setReviewSubmitted(run.status === 'Tied')
+      setReviewApproved(run.status === 'Tied')
+
+      if (nextSummary.unresolved_blockers > 0) {
+        setCurrentStep(3)
+      } else if (run.status === 'Tied') {
+        setCurrentStep(4)
+      } else {
+        setCurrentStep(2)
+      }
+
+      setNotice({ tone: 'success', message: `Loaded run ${run.id.slice(0, 8)}.` })
+    } catch (error) {
+      setNotice({ tone: 'error', message: `Unable to load run ${runId.slice(0, 8)}: ${getErrorMessage(error)}` })
+    } finally {
+      setWorking(null)
+    }
   }
 
   async function handleStartSession() {
@@ -431,6 +496,7 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
       setClientRecord(client)
       setRunRecord(run)
       setImports(emptyImportState())
+      setImportsRestoredFromRun(false)
       setSelectedFiles({})
       resetDownstream()
       setReviewSubmitted(false)
@@ -826,18 +892,55 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
           <Text className="text-sm text-zinc-600">
             Upload payroll, bank, and GL files. Every file must pass schema, mapping, and validation before the next step unlocks.
           </Text>
+          {importsRestoredFromRun ? (
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+              <Text className="text-sm text-zinc-700">Existing validated imports were loaded for this run. Upload a replacement file for any source you need to update.</Text>
+            </div>
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-3">
             {SOURCE_ORDER.map((sourceType) => (
               <article key={sourceType} className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
                 <Text className="text-sm font-semibold text-zinc-900">{SOURCE_LABELS[sourceType]}</Text>
                 <Input type="file" className="mt-3" onChange={(event) => setSelectedFile(sourceType, event.target.files?.[0] ?? null)} />
+                <Text className="mt-2 text-xs text-zinc-500">
+                  {selectedFiles[sourceType]?.name ?? imports[sourceType].fileName ?? 'No file selected'}
+                </Text>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Button outline disabled={!runRecord || !selectedFiles[sourceType] || Boolean(working)} onClick={() => processSourceType(sourceType)}>
                     {working === `process-${sourceType}` ? 'Processing...' : 'Process file'}
                   </Button>
+                  <Button
+                    outline
+                    disabled={Boolean(working) || (!selectedFiles[sourceType] && !imports[sourceType].sourceFile)}
+                    onClick={() => clearSourceType(sourceType)}
+                  >
+                    Remove
+                  </Button>
                   {imports[sourceType].sourceFile ? <Badge color="green">Imported</Badge> : <Badge color="zinc">Pending</Badge>}
                 </div>
+                {imports[sourceType].detect?.reasons?.length ? (
+                  <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-2">
+                    <Text className="text-xs font-medium text-zinc-700">Schema confidence detail</Text>
+                    <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-zinc-600">
+                      {imports[sourceType].detect.reasons.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {imports[sourceType].map ? (
+                  <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-2">
+                    <Text className="text-xs font-medium text-zinc-700">Required fields</Text>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {Object.entries(imports[sourceType].map.required_fields).map(([field, mapped]) => (
+                        <Badge key={field} color={mapped ? 'green' : 'red'}>
+                          {field}: {mapped ? 'mapped' : 'missing'}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {imports[sourceType].error ? <Text className="mt-2 text-sm text-red-700">{imports[sourceType].error}</Text> : null}
               </article>
             ))}
@@ -886,6 +989,20 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
               })}
             </TableBody>
           </Table>
+          {SOURCE_ORDER.some((sourceType) => (imports[sourceType].validate?.warnings.length ?? 0) > 0) ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+              <Text className="text-sm font-medium text-amber-900">Validation warnings</Text>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+                {SOURCE_ORDER.flatMap((sourceType) =>
+                  (imports[sourceType].validate?.warnings ?? []).map((warning) => (
+                    <li key={`${sourceType}-${warning}`}>
+                      {sourceType}: {warning}
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          ) : null}
         </div>
       )
     }

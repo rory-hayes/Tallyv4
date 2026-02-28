@@ -110,6 +110,7 @@ export default function AppDashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [range, setRange] = useState<DateRange>('7d')
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardRunId, setWizardRunId] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
   const refreshDashboard = useCallback(() => {
@@ -118,19 +119,27 @@ export default function AppDashboardPage() {
 
   const closeWizard = useCallback(() => {
     setWizardOpen(false)
+    setWizardRunId(null)
     if (typeof window === 'undefined') return
     const url = new URL(window.location.href)
     if (url.searchParams.get('newRun') === '1') {
       url.searchParams.delete('newRun')
+      url.searchParams.delete('runId')
       const nextQuery = url.searchParams.toString()
       router.replace(nextQuery ? `${url.pathname}?${nextQuery}` : url.pathname)
     }
   }, [router])
 
+  const openWizard = useCallback((runId?: string) => {
+    setWizardRunId(runId ?? null)
+    setWizardOpen(true)
+  }, [])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     if (params.get('newRun') === '1') {
+      setWizardRunId(params.get('runId'))
       setWizardOpen(true)
     }
   }, [])
@@ -197,7 +206,7 @@ export default function AppDashboardPage() {
         setRows(filtered)
       } catch {
         if (!cancelled) {
-          setError('Unable to load dashboard metrics. Start a new guided run to refresh data.')
+          setError('Unable to load dashboard metrics. Start a new run to refresh data.')
         }
       } finally {
         if (!cancelled) {
@@ -281,12 +290,12 @@ export default function AppDashboardPage() {
         <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
           <Text className="text-zinc-700">Start a new run wizard to begin secure session setup and load live dashboard metrics.</Text>
           <div className="mt-4">
-            <Button color="dark/zinc" onClick={() => setWizardOpen(true)}>
+            <Button color="dark/zinc" onClick={() => openWizard()}>
               Start new run
             </Button>
           </div>
         </section>
-        <NewRunWizardModal open={wizardOpen} onClose={closeWizard} onRunUpdated={refreshDashboard} />
+        <NewRunWizardModal open={wizardOpen} initialRunId={wizardRunId} onClose={closeWizard} onRunUpdated={refreshDashboard} />
       </div>
     )
   }
@@ -320,7 +329,7 @@ export default function AppDashboardPage() {
       </div>
       <div className="mt-14 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base/7 font-semibold text-zinc-950 sm:text-sm/6">Recent runs</h2>
-        <Button outline onClick={() => setWizardOpen(true)}>
+        <Button outline onClick={() => openWizard()}>
           Start new run
           <ArrowRightIcon data-slot="icon" />
         </Button>
@@ -336,7 +345,7 @@ export default function AppDashboardPage() {
         </div>
       ) : metrics.rowsForTable.length === 0 ? (
         <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
-          <Text className="text-sm text-zinc-700">No runs found for this profile yet. Create your first guided run to populate this dashboard.</Text>
+          <Text className="text-sm text-zinc-700">No runs found for this profile yet. Start your first run to populate this dashboard.</Text>
         </div>
       ) : (
         <Table className="mt-4 [--gutter:--spacing(6)] lg:[--gutter:--spacing(10)]">
@@ -369,8 +378,8 @@ export default function AppDashboardPage() {
                   <TableCell className="tabular-nums">{toCurrency(row.summary.variance_total, row.history.currency)}</TableCell>
                   <TableCell className="tabular-nums">{formatDate(row.run.updated_at)}</TableCell>
                   <TableCell className="min-w-36 whitespace-nowrap">
-                    <Button plain className="whitespace-nowrap" onClick={() => setWizardOpen(true)}>
-                      Open
+                    <Button plain className="whitespace-nowrap" onClick={() => openWizard(row.run.id)}>
+                      Resume
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -378,7 +387,7 @@ export default function AppDashboardPage() {
             </TableBody>
         </Table>
       )}
-      <NewRunWizardModal open={wizardOpen} onClose={closeWizard} onRunUpdated={refreshDashboard} />
+      <NewRunWizardModal open={wizardOpen} initialRunId={wizardRunId} onClose={closeWizard} onRunUpdated={refreshDashboard} />
     </div>
   )
 }
