@@ -29,7 +29,6 @@ import {
   type DetectSchemaResponse,
   type ExportPackResponse,
   type MapColumnsResponse,
-  type ReconcileResponse,
   type RunResponse,
   type RunSummaryResponse,
   type SourceFileResponse,
@@ -165,6 +164,10 @@ function isVarianceActionable(status: VarianceStatus): boolean {
   return status === 'Open' || status === 'Matched' || status === 'Explained' || status === 'ExpectedLater' || status === 'Ignored'
 }
 
+function canApproveVariance(status: VarianceStatus): boolean {
+  return status === 'Matched' || status === 'Explained' || status === 'ExpectedLater' || status === 'Ignored'
+}
+
 type NewRunWizardModalProps = {
   open: boolean
   onClose: () => void
@@ -200,7 +203,6 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
   const [selectedFiles, setSelectedFiles] = useState<Partial<Record<SourceFileType, File>>>({})
   const [imports, setImports] = useState<Record<SourceFileType, ImportProgress>>(emptyImportState())
 
-  const [reconcileRecord, setReconcileRecord] = useState<ReconcileResponse | null>(null)
   const [summary, setSummary] = useState<RunSummaryResponse | null>(null)
   const [variances, setVariances] = useState<VarianceResponse[]>([])
   const [varianceNotes, setVarianceNotes] = useState<Record<string, string>>({})
@@ -226,7 +228,6 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
     setRunRecord(null)
     setSelectedFiles({})
     setImports(emptyImportState())
-    setReconcileRecord(null)
     setSummary(null)
     setVariances([])
     setVarianceNotes({})
@@ -264,12 +265,12 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
     () => [
       Boolean(session && runRecord),
       importsReady,
-      Boolean(reconcileRecord),
-      Boolean(reconcileRecord) && blockers.length === 0,
+      Boolean(summary),
+      Boolean(summary) && blockers.length === 0,
       reviewSubmitted && reviewApproved && runRecord?.status === 'Tied',
       Boolean(exportPack),
     ],
-    [blockers.length, exportPack, importsReady, reconcileRecord, reviewApproved, reviewSubmitted, runRecord, session]
+    [blockers.length, exportPack, importsReady, reviewApproved, reviewSubmitted, runRecord, session, summary]
   )
 
   const maxAvailableStep = useMemo(() => {
@@ -282,6 +283,50 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
       setCurrentStep(maxAvailableStep)
     }
   }, [currentStep, maxAvailableStep])
+
+  const currentStepRequirements = useMemo(() => {
+    if (currentStep === 0) {
+      const requirements: string[] = []
+      if (!session) requirements.push('Start secure session.')
+      if (session && !runRecord) requirements.push('Create run context.')
+      return requirements
+    }
+
+    if (currentStep === 1) {
+      const requirements: string[] = []
+      for (const sourceType of SOURCE_ORDER) {
+        const entry = imports[sourceType]
+        if (!entry.sourceFile) {
+          requirements.push(`Process ${SOURCE_LABELS[sourceType]}.`)
+          continue
+        }
+        if (entry.detect?.blocked) requirements.push(`${sourceType}: schema confidence is below the required threshold.`)
+        if (entry.map?.blocked) requirements.push(`${sourceType}: required mapping fields are not fully confirmed.`)
+        if ((entry.validate?.blockers.length ?? 0) > 0) requirements.push(`${sourceType}: resolve validation blockers.`)
+      }
+      return requirements
+    }
+
+    if (currentStep === 2) {
+      return summary ? [] : ['Run reconciliation to generate status and variance results.']
+    }
+
+    if (currentStep === 3) {
+      return blockers.length > 0 ? ['Resolve and approve all blocker variances.'] : []
+    }
+
+    if (currentStep === 4) {
+      const requirements: string[] = []
+      if (!reviewSubmitted) requirements.push('Submit run for review.')
+      if (reviewSubmitted && !reviewApproved) requirements.push('Approve run as reviewer.')
+      if (reviewApproved && runRecord?.status !== 'Tied') {
+        requirements.push('Run is not tied yet. Go back to Variances and clear remaining open items.')
+      }
+      return requirements
+    }
+
+    return exportPack ? [] : ['Generate export pack.']
+  }, [blockers.length, currentStep, exportPack, imports, reviewApproved, reviewSubmitted, runRecord, session, summary])
 
   function updateSession(nextSession: SessionState | null) {
     setSession(nextSession)
@@ -296,10 +341,11 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
   }
 
   function resetDownstream() {
-    setReconcileRecord(null)
     setSummary(null)
     setVariances([])
     setVarianceNotes({})
+    setReviewSubmitted(false)
+    setReviewApproved(false)
     setExportPack(null)
     setExportDownloadUrl(null)
   }
@@ -494,7 +540,6 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
       setNotice(null)
 
       const record = await reconcileRun(runRecord.id, accessToken)
-      setReconcileRecord(record)
       await refreshReconciliationViews(runRecord.id, accessToken)
       setNotice({ tone: 'success', message: `Reconciliation complete. Run status: ${record.status}.` })
     } catch (error) {
@@ -568,8 +613,9 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
 
       for (const blocker of blockers) {
         const note = varianceNotes[blocker.id]?.trim() ?? 'Reviewed by preparer during run wizard.'
+        let nextStatus = blocker.status
         if (blocker.status === 'Open') {
-          await resolveVariance(
+          const resolved = await resolveVariance(
             blocker.id,
             {
               status: 'Explained',
@@ -578,8 +624,12 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
             },
             accessToken
           )
+          nextStatus = resolved.status
         }
-        await approveVariance(blocker.id, note, accessToken)
+
+        if (canApproveVariance(nextStatus)) {
+          await approveVariance(blocker.id, note, accessToken)
+        }
       }
 
       await refreshReconciliationViews(runRecord.id, accessToken)
@@ -970,12 +1020,15 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
                     </Button>
                     <Button
                       color="dark/zinc"
-                      disabled={variance.status === 'Approved' || variance.status === 'Closed' || Boolean(working)}
+                      disabled={!canApproveVariance(variance.status) || variance.status === 'Approved' || variance.status === 'Closed' || Boolean(working)}
                       onClick={() => handleApproveVariance(variance)}
                     >
                       Approve
                     </Button>
                   </div>
+                  {variance.status === 'Open' ? (
+                    <Text className="mt-2 text-xs text-zinc-500">Resolve first using Explain or Expected later, then approve.</Text>
+                  ) : null}
                 </article>
               ))}
             </div>
@@ -995,13 +1048,14 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
             <Button outline disabled={!runRecord || Boolean(working)} onClick={handleSubmitForReview}>
               {working === 'submit-review' ? 'Submitting...' : 'Submit for review'}
             </Button>
-            <Button color="dark/zinc" disabled={!runRecord || blockers.length > 0 || Boolean(working)} onClick={handleApproveRun}>
+            <Button color="dark/zinc" disabled={!runRecord || blockers.length > 0 || !reviewSubmitted || Boolean(working)} onClick={handleApproveRun}>
               {working === 'approve-run' ? 'Approving...' : 'Approve run'}
             </Button>
             {runRecord ? <Badge color={runStatusTone(runRecord.status)}>Run status: {runRecord.status}</Badge> : null}
             <Badge color={reviewSubmitted ? 'green' : 'zinc'}>{reviewSubmitted ? 'Submitted' : 'Not submitted'}</Badge>
             <Badge color={reviewApproved ? 'green' : 'zinc'}>{reviewApproved ? 'Approved' : 'Not approved'}</Badge>
           </div>
+          {!reviewSubmitted ? <Text className="text-xs text-zinc-500">Submit for review first to unlock Approve run.</Text> : null}
         </div>
       )
     }
@@ -1088,6 +1142,26 @@ export function NewRunWizardModal({ open, onClose, onRunUpdated }: NewRunWizardM
             </Text>
           </section>
         ) : null}
+
+        <section
+          className={clsx(
+            'rounded-xl border p-3',
+            stepCompletion[currentStep] ? 'border-green-300 bg-green-50 text-green-900' : 'border-amber-300 bg-amber-50 text-amber-900'
+          )}
+        >
+          {stepCompletion[currentStep] ? (
+            <Text className="text-sm">Step complete. Next is unlocked.</Text>
+          ) : (
+            <>
+              <Text className="text-sm font-medium">To unlock Next, complete:</Text>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                {currentStepRequirements.map((requirement) => (
+                  <li key={requirement}>{requirement}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
       </DialogBody>
 
       <DialogActions>
