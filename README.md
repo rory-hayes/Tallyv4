@@ -16,6 +16,7 @@ Trust-first payroll reconciliation and close packs with deterministic matching.
 - Import pipeline with confidence gating and parse-failure blockers.
 - Audit pack generation (PDF + CSV + evidence log bundle).
 - Catalyst-only UI implementation with wrappers under `frontend/src/components/ui`.
+- Guided run workspace that mirrors real payroll reconciliation flow in one end-to-end journey.
 
 ## Quick Start
 
@@ -36,6 +37,12 @@ uvicorn app.main:app --reload
 cd frontend
 npm install
 npm run dev
+```
+
+Optional API target override:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
 
 ### Local infra (optional)

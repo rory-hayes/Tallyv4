@@ -20,11 +20,11 @@ test('capture landing page snapshot', async ({ page }) => {
   expect(fs.existsSync(filePath)).toBeTruthy()
 })
 
-test('capture import workflow snapshot', async ({ page }) => {
+test('capture guided workflow snapshot', async ({ page }) => {
   ensureDir()
-  await page.goto('/app/import')
+  await page.goto('/app/workflow')
   await page.setViewportSize({ width: 1440, height: 1080 })
-  const filePath = path.join(snapshotDir, 'import-workflow.png')
+  const filePath = path.join(snapshotDir, 'guided-workflow.png')
   await page.screenshot({ path: filePath, fullPage: true })
   expect(fs.existsSync(filePath)).toBeTruthy()
 })

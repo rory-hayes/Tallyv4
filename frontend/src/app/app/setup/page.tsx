@@ -55,8 +55,8 @@ export default function SetupPage() {
         </Fieldset>
         <div className="mt-6 flex gap-3">
           <Button color="dark/zinc">Save workspace</Button>
-          <Button outline href="/app/new-run">
-            Continue to first run
+          <Button outline href="/app/workflow">
+            Continue to guided run
           </Button>
         </div>
       </section>

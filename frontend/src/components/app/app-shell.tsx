@@ -43,7 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </NavbarSection>
           <NavbarSpacer />
           <NavbarSection>
-            <NavbarItem href="/app/import" aria-label="Search">
+            <NavbarItem href="/app/workflow" aria-label="Open guided run">
               <MagnifyingGlassIcon />
             </NavbarItem>
             <NavbarItem href="/app/setup">

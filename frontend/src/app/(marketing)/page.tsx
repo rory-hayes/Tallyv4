@@ -31,8 +31,8 @@ export default function MarketingPage() {
             Open product
             <ArrowRightIcon data-slot="icon" />
           </Button>
-          <Button href="/app/import" outline>
-            View import workflow
+          <Button href="/app/workflow" outline>
+            View guided run
           </Button>
         </div>
       </section>
