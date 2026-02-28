@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowRightIcon, ArrowTrendingDownIcon, ArrowTrendingUpIcon, MinusIcon } from '@heroicons/react/20/solid'
+import { ArrowRightIcon } from '@heroicons/react/20/solid'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -9,7 +9,7 @@ import { type RunResponse, type RunSummaryResponse, getRun, getRunSummary } from
 import { formatDate, formatEUR, formatGBP } from '@/lib/format'
 import { loadRunHistory, upsertRunHistory, type RunHistoryRecord } from '@/lib/run-history'
 import { loadSession, type SessionState } from '@/lib/session'
-import { Badge, Button, Heading, Select, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Text } from '@/components/ui'
+import { Badge, Button, Divider, Heading, Select, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Text } from '@/components/ui'
 
 type DateRange = '7d' | '30d'
 
@@ -49,12 +49,12 @@ function inRange(value: Date, start: Date, end: Date): boolean {
   return value.getTime() >= start.getTime() && value.getTime() <= end.getTime()
 }
 
-function metricDelta(current: number, previous: number, lowerIsBetter = false): { label: string; tone: MetricTone; icon: typeof ArrowTrendingUpIcon | typeof ArrowTrendingDownIcon | typeof MinusIcon } {
+function metricDelta(current: number, previous: number, lowerIsBetter = false): { change: string; context: string; tone: MetricTone } {
   if (previous === 0) {
     if (current === 0) {
-      return { label: 'No change', tone: 'zinc', icon: MinusIcon }
+      return { change: 'No change', context: 'from prior window', tone: 'zinc' }
     }
-    return { label: 'New activity', tone: lowerIsBetter ? 'red' : 'green', icon: lowerIsBetter ? ArrowTrendingUpIcon : ArrowTrendingUpIcon }
+    return { change: 'New activity', context: 'from prior window', tone: lowerIsBetter ? 'red' : 'green' }
   }
 
   const deltaPct = ((current - previous) / Math.abs(previous)) * 100
@@ -62,19 +62,44 @@ function metricDelta(current: number, previous: number, lowerIsBetter = false): 
   const neutral = Math.abs(deltaPct) < 0.01
 
   if (neutral) {
-    return { label: 'No change', tone: 'zinc', icon: MinusIcon }
+    return { change: 'No change', context: 'from prior window', tone: 'zinc' }
   }
 
   const tone: MetricTone = lowerIsBetter ? (positive ? 'red' : 'green') : positive ? 'green' : 'red'
-  const icon = positive ? ArrowTrendingUpIcon : ArrowTrendingDownIcon
   const sign = positive ? '+' : ''
-  return { label: `${sign}${deltaPct.toFixed(1)}% vs prior window`, tone, icon }
+  return { change: `${sign}${deltaPct.toFixed(1)}%`, context: 'from prior window', tone }
 }
 
 function statusColor(status: RunResponse['status']): 'green' | 'amber' | 'red' {
   if (status === 'Tied') return 'green'
   if (status === 'NeedsReview') return 'amber'
   return 'red'
+}
+
+function StatCard({
+  title,
+  value,
+  change,
+  context,
+  tone,
+}: {
+  title: string
+  value: string
+  change: string
+  context: string
+  tone: MetricTone
+}) {
+  return (
+    <div>
+      <Divider />
+      <div className="mt-6 text-lg/6 font-medium text-zinc-900 sm:text-sm/6">{title}</div>
+      <div className="mt-3 text-4xl/8 font-semibold tabular-nums text-zinc-950 sm:text-3xl/8">{value}</div>
+      <div className="mt-3 text-sm/6 sm:text-xs/6">
+        <Badge color={tone === 'green' ? 'green' : tone === 'red' ? 'red' : 'zinc'}>{change}</Badge>{' '}
+        <span className="text-zinc-500">{context}</span>
+      </div>
+    </div>
+  )
 }
 
 export default function AppDashboardPage() {
@@ -268,66 +293,53 @@ export default function AppDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs md:p-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <Heading className="text-3xl">{greetingLabel(session.email)}</Heading>
-            <Text className="mt-2 text-zinc-600">Operational overview of recent payroll reconciliation runs.</Text>
-          </div>
-          <div className="w-48">
-            <Select value={range} onChange={(event) => setRange(event.target.value as DateRange)}>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </Select>
-          </div>
+      <div>
+        <Heading>{greetingLabel(session.email)}</Heading>
+        <Text className="mt-2 text-zinc-600">Operational overview of recent payroll reconciliation runs.</Text>
+      </div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h2 className="text-base/7 font-semibold text-zinc-950 sm:text-sm/6">Overview</h2>
+        <div className="w-48">
+          <Select value={range} onChange={(event) => setRange(event.target.value as DateRange)}>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </Select>
         </div>
+      </div>
+      <div className="mt-4 grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.cards.map((card) => (
+          <StatCard
+            key={card.label}
+            title={card.label}
+            value={card.value}
+            change={card.delta.change}
+            context={card.delta.context}
+            tone={card.delta.tone}
+          />
+        ))}
+      </div>
+      <div className="mt-14 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base/7 font-semibold text-zinc-950 sm:text-sm/6">Recent runs</h2>
+        <Button outline onClick={() => setWizardOpen(true)}>
+          Start new run
+          <ArrowRightIcon data-slot="icon" />
+        </Button>
+      </div>
 
-        <div className="mt-10">
-          <Heading className="text-xl">Overview</Heading>
-          <div className="mt-4 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            {metrics.cards.map((card) => {
-              const DeltaIcon = card.delta.icon
-              return (
-                <article key={card.label} className="border-t border-zinc-200 pt-5">
-                  <Text className="text-sm font-medium text-zinc-600">{card.label}</Text>
-                  <p className="mt-3 text-4xl font-semibold tabular-nums text-zinc-950">{card.value}</p>
-                  <div className="mt-3">
-                    <Badge color={card.delta.tone === 'green' ? 'green' : card.delta.tone === 'red' ? 'red' : 'zinc'}>
-                      <DeltaIcon data-slot="icon" />
-                      {card.delta.label}
-                    </Badge>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
+      {loading ? (
+        <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+          <Text className="text-sm text-zinc-700">Loading dashboard data...</Text>
         </div>
-
-        <div className="mt-12 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <Heading className="text-xl">Recent runs</Heading>
-            <Text className="mt-1 text-zinc-600">{metrics.periodLabel} with live status and variance totals.</Text>
-          </div>
-          <Button outline onClick={() => setWizardOpen(true)}>
-            Start new run
-            <ArrowRightIcon data-slot="icon" />
-          </Button>
+      ) : error ? (
+        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
+          <Text className="text-sm text-red-800">{error}</Text>
         </div>
-
-        {loading ? (
-          <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
-            <Text className="text-sm text-zinc-700">Loading dashboard data...</Text>
-          </div>
-        ) : error ? (
-          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
-            <Text className="text-sm text-red-800">{error}</Text>
-          </div>
-        ) : metrics.rowsForTable.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
-            <Text className="text-sm text-zinc-700">No runs found for this profile yet. Create your first guided run to populate this dashboard.</Text>
-          </div>
-        ) : (
-          <Table className="mt-6">
+      ) : metrics.rowsForTable.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+          <Text className="text-sm text-zinc-700">No runs found for this profile yet. Create your first guided run to populate this dashboard.</Text>
+        </div>
+      ) : (
+        <Table className="mt-4 [--gutter:--spacing(6)] lg:[--gutter:--spacing(10)]">
             <TableHead>
               <TableRow>
                 <TableHeader>Run ID</TableHeader>
@@ -358,15 +370,14 @@ export default function AppDashboardPage() {
                   <TableCell className="tabular-nums">{formatDate(row.run.updated_at)}</TableCell>
                   <TableCell className="min-w-36 whitespace-nowrap">
                     <Button plain className="whitespace-nowrap" onClick={() => setWizardOpen(true)}>
-                      Open wizard
+                      Open
                     </Button>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
-        )}
-      </section>
+        </Table>
+      )}
       <NewRunWizardModal open={wizardOpen} onClose={closeWizard} onRunUpdated={refreshDashboard} />
     </div>
   )
