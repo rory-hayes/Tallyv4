@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/node_modules/
+.next/
+out/
+
+# Runtime data
+backend/data/
+frontend/tests/visual/snapshots/
+!frontend/tests/visual/snapshots/.gitkeep
+
+# Env
+.env
+.env.*
+!.env.example

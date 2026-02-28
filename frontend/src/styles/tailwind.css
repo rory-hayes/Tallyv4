@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: Inter, sans-serif;
+  --font-sans--font-feature-settings: 'cv11';
+  --color-trust-ink: oklch(0.24 0.01 258);
+  --color-trust-accent: oklch(0.42 0.04 250);
+}
+
+@layer base {
+  body {
+    background: linear-gradient(180deg, #f5f6f8 0%, #ffffff 40%, #f8fafc 100%);
+    color: var(--color-trust-ink);
+  }
+}

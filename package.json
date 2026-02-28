@@ -1,0 +1,10 @@
+{
+  "name": "tally",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "check:ui": "node ./scripts/check-ui-governance.mjs"
+  }
+}

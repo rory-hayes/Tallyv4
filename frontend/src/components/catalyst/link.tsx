@@ -1,0 +1,20 @@
+import * as Headless from '@headlessui/react'
+import NextLink from 'next/link'
+import React, { forwardRef } from 'react'
+
+export const Link = forwardRef(function Link(
+  props: { href: string } & React.ComponentPropsWithoutRef<'a'>,
+  ref: React.ForwardedRef<HTMLAnchorElement>
+) {
+  const { href, ...rest } = props
+  const isInternal = href.startsWith('/')
+  return (
+    <Headless.DataInteractive>
+      {isInternal ? (
+        <NextLink href={href} ref={ref} {...rest} />
+      ) : (
+        <a href={href} {...rest} ref={ref} />
+      )}
+    </Headless.DataInteractive>
+  )
+})
