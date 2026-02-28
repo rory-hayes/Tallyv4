@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import MagicLinkToken, User
+from app.core.config import get_settings
 from app.schemas.auth import AccessTokenResponse, MagicLinkRequest, MagicLinkRequestResponse, MagicLinkVerifyRequest, UserIdentity
 from app.services.auth_service import create_access_token, create_magic_link_token, verify_magic_link_token
+from app.services.email_service import send_magic_link_email, smtp_configured
 
 router = APIRouter()
 
@@ -19,10 +21,29 @@ def request_magic_link(payload: MagicLinkRequest, db: Session = Depends(get_db))
     db.add(MagicLinkToken(email=payload.email.lower(), token=token, expires_at=expires_at))
     db.commit()
 
+    settings = get_settings()
+    magic_link = f"{settings.app_base_url.rstrip('/')}/auth/verify?token={token}"
+    delivery_mode = settings.auth_delivery_mode.lower().strip()
+
+    if delivery_mode == "smtp":
+        if not smtp_configured():
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="SMTP delivery is not configured")
+        try:
+            send_magic_link_email(payload.email.lower(), magic_link)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unable to send secure link email") from exc
+        return MagicLinkRequestResponse(
+            message="Secure link sent to your email address.",
+            expires_at=expires_at,
+            delivery_mode="smtp",
+        )
+
     return MagicLinkRequestResponse(
-        message="Magic link generated. Deliver this URL through your email provider in production.",
+        message="Verification token generated for inline delivery mode.",
         expires_at=expires_at,
-        magic_link=f"https://app.tally.local/auth/verify?token={token}",
+        delivery_mode="inline",
+        magic_link=magic_link,
+        verification_token=token,
     )
 
 

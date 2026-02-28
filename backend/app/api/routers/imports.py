@@ -91,7 +91,7 @@ def detect_schema(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source file not found")
     require_run_access(db, run_id=source_file.run_id, user=current_user)
 
-    schema_type, confidence, reasons, _ = detect_schema_for_source(source_file)
+    schema_type, confidence, reasons, parsed = detect_schema_for_source(source_file)
     source_file.schema_type = schema_type
     source_file.schema_confidence = confidence
 
@@ -112,6 +112,8 @@ def detect_schema(
         reasons=reasons,
         requires_confirmation=requires_confirmation,
         blocked=blocked,
+        available_columns=parsed.headers,
+        sample_rows=parsed.rows[:10],
     )
 
 
@@ -170,6 +172,8 @@ def map_columns(
         required_fields=required_fields,
         mapping=mapping,
         blocked=blocked,
+        available_columns=parsed.headers,
+        sample_rows=parsed.rows[:10],
     )
 
 

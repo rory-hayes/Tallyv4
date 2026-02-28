@@ -12,7 +12,9 @@ class MagicLinkRequest(BaseModel):
 class MagicLinkRequestResponse(BaseModel):
     message: str
     expires_at: datetime
-    magic_link: str
+    delivery_mode: str
+    magic_link: str | None = None
+    verification_token: str | None = None
 
 
 class MagicLinkVerifyRequest(BaseModel):

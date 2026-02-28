@@ -26,6 +26,8 @@ class DetectSchemaResponse(BaseModel):
     reasons: list[str]
     requires_confirmation: bool
     blocked: bool
+    available_columns: list[str]
+    sample_rows: list[dict[str, Any]]
 
 
 class MapColumnsRequest(BaseModel):
@@ -39,6 +41,8 @@ class MapColumnsResponse(BaseModel):
     required_fields: dict[str, bool]
     mapping: dict[str, Any]
     blocked: bool
+    available_columns: list[str]
+    sample_rows: list[dict[str, Any]]
 
 
 class TransformRequest(BaseModel):

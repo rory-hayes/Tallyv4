@@ -168,6 +168,15 @@ function canApproveVariance(status: VarianceStatus): boolean {
   return status === 'Matched' || status === 'Explained' || status === 'ExpectedLater' || status === 'Ignored'
 }
 
+function buildRequiredMappingDraft(mapResponse: MapColumnsResponse): Record<string, string> {
+  const next: Record<string, string> = {}
+  for (const field of Object.keys(mapResponse.required_fields)) {
+    const value = mapResponse.mapping[field]
+    next[field] = typeof value === 'string' ? value : ''
+  }
+  return next
+}
+
 type NewRunWizardModalProps = {
   open: boolean
   onClose: () => void
@@ -195,6 +204,8 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
   const [session, setSession] = useState<SessionState | null>(null)
   const [authEmail, setAuthEmail] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
+  const [authCode, setAuthCode] = useState('')
+  const [authDeliveryMode, setAuthDeliveryMode] = useState<string>('inline')
 
   const [context, setContext] = useState<RunContextState>(defaultContext)
 
@@ -203,6 +214,7 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
 
   const [selectedFiles, setSelectedFiles] = useState<Partial<Record<SourceFileType, File>>>({})
   const [imports, setImports] = useState<Record<SourceFileType, ImportProgress>>(emptyImportState())
+  const [mappingDrafts, setMappingDrafts] = useState<Partial<Record<SourceFileType, Record<string, string>>>>({})
   const [importsRestoredFromRun, setImportsRestoredFromRun] = useState(false)
 
   const [summary, setSummary] = useState<RunSummaryResponse | null>(null)
@@ -230,6 +242,7 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     setRunRecord(null)
     setSelectedFiles({})
     setImports(emptyImportState())
+    setMappingDrafts({})
     setImportsRestoredFromRun(false)
     setSummary(null)
     setVariances([])
@@ -240,6 +253,8 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     setExportDownloadUrl(null)
     setWorking(null)
     setNotice(null)
+    setAuthCode('')
+    setAuthDeliveryMode('inline')
 
     if (initialRunId && existing?.accessToken) {
       void hydrateExistingRun(initialRunId, existing.accessToken)
@@ -300,7 +315,8 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
   const currentStepRequirements = useMemo(() => {
     if (currentStep === 0) {
       const requirements: string[] = []
-      if (!session) requirements.push('Start secure session.')
+      if (!session && !authCode.trim()) requirements.push('Request verification code.')
+      if (!session && authCode.trim()) requirements.push('Verify secure code.')
       if (session && !runRecord) requirements.push('Create run context.')
       return requirements
     }
@@ -339,7 +355,7 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     }
 
     return exportPack ? [] : ['Generate export pack.']
-  }, [currentStep, exportPack, imports, openVariances.length, reviewApproved, reviewSubmitted, runRecord, session, summary])
+  }, [authCode, currentStep, exportPack, imports, openVariances.length, reviewApproved, reviewSubmitted, runRecord, session, summary])
 
   function updateSession(nextSession: SessionState | null) {
     setSession(nextSession)
@@ -375,6 +391,10 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     setSelectedFiles((current) => ({
       ...current,
       [sourceType]: undefined,
+    }))
+    setMappingDrafts((current) => ({
+      ...current,
+      [sourceType]: {},
     }))
     setImports((current) => ({
       ...current,
@@ -442,9 +462,9 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     }
   }
 
-  async function handleStartSession() {
+  async function handleRequestSessionCode() {
     if (!authEmail.trim()) {
-      setNotice({ tone: 'warning', message: 'Enter your work email to start a secure session.' })
+      setNotice({ tone: 'warning', message: 'Enter your work email to request a secure verification code.' })
       return
     }
 
@@ -453,15 +473,45 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
 
     try {
       const requested = await requestMagicLink(authEmail.trim().toLowerCase())
-      const token = extractTokenFromMagicLink(requested.magic_link)
-      const verified: AccessTokenResponse = await verifyMagicLink(token)
+      setAuthDeliveryMode(requested.delivery_mode || 'inline')
 
+      const inlineToken =
+        requested.verification_token ??
+        (requested.magic_link ? extractTokenFromMagicLink(requested.magic_link) : '')
+      if (inlineToken) {
+        setAuthCode(inlineToken)
+      }
+
+      setNotice({
+        tone: 'success',
+        message:
+          requested.delivery_mode === 'smtp'
+            ? 'Verification link sent. Paste the token from the email to continue.'
+            : 'Verification token generated. Confirm it to start your secure session.',
+      })
+    } catch (error) {
+      setNotice({ tone: 'error', message: getErrorMessage(error) })
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  async function handleVerifySessionCode() {
+    const token = authCode.trim()
+    if (!token) {
+      setNotice({ tone: 'warning', message: 'Enter the verification token to complete secure session setup.' })
+      return
+    }
+
+    setAuthLoading(true)
+    setNotice(null)
+    try {
+      const verified: AccessTokenResponse = await verifyMagicLink(token)
       updateSession({
         email: verified.user.email,
         accessToken: verified.access_token,
         expiresAt: verified.expires_at,
       })
-
       setAuthEmail(verified.user.email)
       setNotice({ tone: 'success', message: 'Session started. Continue with run setup.' })
     } catch (error) {
@@ -502,6 +552,7 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
       setClientRecord(client)
       setRunRecord(run)
       setImports(emptyImportState())
+      setMappingDrafts({})
       setImportsRestoredFromRun(false)
       setSelectedFiles({})
       resetDownstream()
@@ -564,6 +615,10 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
           error: undefined,
         },
       }))
+      setMappingDrafts((current) => ({
+        ...current,
+        [sourceType]: buildRequiredMappingDraft(mapped),
+      }))
 
       resetDownstream()
 
@@ -595,6 +650,47 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
       if (file) {
         await processSourceType(sourceType)
       }
+    }
+  }
+
+  async function applyMappingAndRevalidate(sourceType: SourceFileType) {
+    try {
+      const accessToken = ensureToken()
+      const entry = imports[sourceType]
+      if (!entry.sourceFile) {
+        throw new Error(`Process ${SOURCE_LABELS[sourceType]} before applying mapping.`)
+      }
+
+      const manualMapping = mappingDrafts[sourceType] ?? {}
+      setWorking(`map-${sourceType}`)
+      setNotice(null)
+
+      const mapped = await mapColumns(entry.sourceFile.id, accessToken, manualMapping, entry.map?.schema_type)
+      const validated = await validateSourceFile(entry.sourceFile.id, accessToken)
+      setImports((current) => ({
+        ...current,
+        [sourceType]: {
+          ...current[sourceType],
+          map: mapped,
+          validate: validated,
+          error: undefined,
+        },
+      }))
+      setMappingDrafts((current) => ({
+        ...current,
+        [sourceType]: buildRequiredMappingDraft(mapped),
+      }))
+      resetDownstream()
+
+      if (mapped.blocked || validated.blockers.length > 0) {
+        setNotice({ tone: 'warning', message: `${sourceType} mapping updated, but additional fixes are required.` })
+      } else {
+        setNotice({ tone: 'success', message: `${sourceType} mapping applied and file revalidated.` })
+      }
+    } catch (error) {
+      setNotice({ tone: 'error', message: getErrorMessage(error) })
+    } finally {
+      setWorking(null)
     }
   }
 
@@ -804,7 +900,7 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
       return (
         <div className="space-y-6">
           <div>
-            <Text className="text-sm text-zinc-600">Start a secure session, then define run scope for this payroll close.</Text>
+            <Text className="text-sm text-zinc-600">Request a secure verification code, verify the session, then define run scope for this payroll close.</Text>
             <Text className="mt-1 text-xs text-zinc-500">API base: {API_BASE_URL}</Text>
           </div>
 
@@ -819,12 +915,23 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
                   placeholder="payroll.manager@firm.co.uk"
                 />
               </Field>
+              <Field>
+                <Label>Verification token</Label>
+                <Input
+                  value={authCode}
+                  onChange={(event) => setAuthCode(event.target.value)}
+                  placeholder={authDeliveryMode === 'smtp' ? 'Paste token from secure email' : 'Generated token appears here in inline mode'}
+                />
+              </Field>
             </FieldGroup>
           </Fieldset>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button color="dark/zinc" disabled={authLoading} onClick={handleStartSession}>
-              {authLoading ? 'Starting session...' : 'Start secure session'}
+            <Button color="dark/zinc" disabled={authLoading} onClick={handleRequestSessionCode}>
+              {authLoading ? 'Requesting code...' : 'Request verification code'}
+            </Button>
+            <Button outline disabled={authLoading || !authCode.trim()} onClick={handleVerifySessionCode}>
+              {authLoading ? 'Verifying...' : 'Verify code'}
             </Button>
             <Button outline onClick={() => updateSession(null)}>
               Clear session
@@ -945,6 +1052,87 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
                           {field}: {mapped ? 'mapped' : 'missing'}
                         </Badge>
                       ))}
+                    </div>
+                  </div>
+                ) : null}
+                {imports[sourceType].map ? (
+                  <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-2">
+                    <Text className="text-xs font-medium text-zinc-700">Mapping controls</Text>
+                    <div className="mt-2 grid gap-2">
+                      {Object.keys(imports[sourceType].map.required_fields).map((field) => (
+                        <Field key={`${sourceType}-${field}`}>
+                          <Label>{field}</Label>
+                          <Select
+                            value={mappingDrafts[sourceType]?.[field] ?? ''}
+                            onChange={(event) =>
+                              setMappingDrafts((current) => ({
+                                ...current,
+                                [sourceType]: {
+                                  ...(current[sourceType] ?? {}),
+                                  [field]: event.target.value,
+                                },
+                              }))
+                            }
+                          >
+                            <option value="">Select column</option>
+                            {(imports[sourceType].map?.available_columns ?? []).map((column) => (
+                              <option key={`${sourceType}-${field}-${column}`} value={column}>
+                                {column}
+                              </option>
+                            ))}
+                          </Select>
+                        </Field>
+                      ))}
+                    </div>
+                    <div className="mt-3">
+                      <Button outline disabled={!imports[sourceType].sourceFile || Boolean(working)} onClick={() => applyMappingAndRevalidate(sourceType)}>
+                        {working === `map-${sourceType}` ? 'Applying mapping...' : 'Apply mapping + revalidate'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+                {imports[sourceType].map?.sample_rows?.length ? (
+                  <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-2">
+                    <Text className="text-xs font-medium text-zinc-700">Row preview (first 5)</Text>
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="min-w-full text-left text-xs text-zinc-700">
+                        <thead className="border-b border-zinc-200 text-zinc-500">
+                          <tr>
+                            {(Object.values(mappingDrafts[sourceType] ?? {}).filter(Boolean) as string[])
+                              .filter((value, index, self) => self.indexOf(value) === index)
+                              .slice(0, 4)
+                              .concat(
+                                ((Object.values(mappingDrafts[sourceType] ?? {}).filter(Boolean) as string[]).length === 0
+                                  ? (imports[sourceType].map?.available_columns ?? []).slice(0, 4)
+                                  : [])
+                              )
+                              .map((column) => (
+                                <th key={`${sourceType}-${column}`} className="px-2 py-1 font-medium">
+                                  {column}
+                                </th>
+                              ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {imports[sourceType].map.sample_rows.slice(0, 5).map((row, rowIndex) => (
+                            <tr key={`${sourceType}-row-${rowIndex}`} className="border-b border-zinc-100">
+                              {(Object.values(mappingDrafts[sourceType] ?? {}).filter(Boolean) as string[])
+                                .filter((value, index, self) => self.indexOf(value) === index)
+                                .slice(0, 4)
+                                .concat(
+                                  ((Object.values(mappingDrafts[sourceType] ?? {}).filter(Boolean) as string[]).length === 0
+                                    ? (imports[sourceType].map?.available_columns ?? []).slice(0, 4)
+                                    : [])
+                                )
+                                .map((column) => (
+                                  <td key={`${sourceType}-${rowIndex}-${column}`} className="px-2 py-1">
+                                    {String((row as Record<string, unknown>)[column] ?? '')}
+                                  </td>
+                                ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 ) : null}

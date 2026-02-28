@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     magic_link_secret: str = "replace-me"
     magic_link_ttl_minutes: int = 20
     access_token_ttl_minutes: int = 480
+    auth_delivery_mode: str = "inline"
+    app_base_url: str = "https://app.tally.local"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+    smtp_from_email: str | None = None
 
     amount_tolerance: float = 0.01
     date_window_business_days: int = 2

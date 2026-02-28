@@ -34,7 +34,9 @@ export type VarianceStatus =
 export interface MagicLinkRequestResponse {
   message: string
   expires_at: string
-  magic_link: string
+  delivery_mode: string
+  magic_link?: string | null
+  verification_token?: string | null
 }
 
 export interface AccessTokenResponse {
@@ -92,6 +94,8 @@ export interface DetectSchemaResponse {
   reasons: string[]
   requires_confirmation: boolean
   blocked: boolean
+  available_columns: string[]
+  sample_rows: Array<Record<string, unknown>>
 }
 
 export interface MapColumnsResponse {
@@ -100,6 +104,8 @@ export interface MapColumnsResponse {
   required_fields: Record<string, boolean>
   mapping: Record<string, unknown>
   blocked: boolean
+  available_columns: string[]
+  sample_rows: Array<Record<string, unknown>>
 }
 
 export interface ValidateResponse {

@@ -48,7 +48,8 @@ test('completes full payroll reconciliation wizard and resumes from dashboard', 
   await expect(page.getByRole('heading', { name: 'New payroll reconciliation run' })).toBeVisible()
 
   await page.getByLabel('Work email').fill(`qa+playwright-${Date.now()}@example.com`)
-  await page.getByRole('button', { name: 'Start secure session' }).click()
+  await page.getByRole('button', { name: 'Request verification code' }).click()
+  await page.getByRole('button', { name: 'Verify code' }).click()
   await expect(page.getByText('Authenticated as')).toBeVisible({ timeout: 20_000 })
 
   await page.getByRole('button', { name: 'Create run context' }).click()
