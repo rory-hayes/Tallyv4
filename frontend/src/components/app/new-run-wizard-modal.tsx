@@ -250,6 +250,10 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     () => variances.filter((item) => item.severity === 'BLOCKER' && item.status !== 'Approved' && item.status !== 'Closed'),
     [variances]
   )
+  const openVariances = useMemo(
+    () => variances.filter((item) => item.status === 'Open' || item.status === 'Matched'),
+    [variances]
+  )
 
   const importsReadyFromUploads = useMemo(
     () =>
@@ -275,11 +279,11 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
       Boolean(session && runRecord),
       importsReady,
       Boolean(summary),
-      Boolean(summary) && blockers.length === 0,
+      Boolean(summary) && blockers.length === 0 && openVariances.length === 0,
       reviewSubmitted && reviewApproved && runRecord?.status === 'Tied',
       Boolean(exportPack),
     ],
-    [blockers.length, exportPack, importsReady, reviewApproved, reviewSubmitted, runRecord, session, summary]
+    [blockers.length, exportPack, importsReady, openVariances.length, reviewApproved, reviewSubmitted, runRecord, session, summary]
   )
 
   const maxAvailableStep = useMemo(() => {
@@ -321,7 +325,7 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     }
 
     if (currentStep === 3) {
-      return blockers.length > 0 ? ['Resolve and approve all blocker variances.'] : []
+      return openVariances.length > 0 ? [`Resolve and approve all open variances (${openVariances.length} remaining).`] : []
     }
 
     if (currentStep === 4) {
@@ -335,7 +339,7 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     }
 
     return exportPack ? [] : ['Generate export pack.']
-  }, [blockers.length, currentStep, exportPack, imports, reviewApproved, reviewSubmitted, runRecord, session, summary])
+  }, [currentStep, exportPack, imports, openVariances.length, reviewApproved, reviewSubmitted, runRecord, session, summary])
 
   function updateSession(nextSession: SessionState | null) {
     setSession(nextSession)
@@ -420,7 +424,9 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
       setReviewSubmitted(run.status === 'Tied')
       setReviewApproved(run.status === 'Tied')
 
-      if (nextSummary.unresolved_blockers > 0) {
+      const unresolved = nextVariances.filter((item) => item.status === 'Open' || item.status === 'Matched')
+
+      if (nextSummary.unresolved_blockers > 0 || unresolved.length > 0) {
         setCurrentStep(3)
       } else if (run.status === 'Tied') {
         setCurrentStep(4)
@@ -667,22 +673,23 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
     }
   }
 
-  async function handleResolveAndApproveBlockers() {
+  async function handleResolveAndApproveOpenVariances() {
     try {
       const accessToken = ensureToken()
       if (!runRecord) {
         throw new Error('Create and reconcile a run first.')
       }
 
-      setWorking('resolve-blockers')
+      setWorking('resolve-open')
       setNotice(null)
 
-      for (const blocker of blockers) {
-        const note = varianceNotes[blocker.id]?.trim() ?? 'Reviewed by preparer during run wizard.'
-        let nextStatus = blocker.status
-        if (blocker.status === 'Open') {
+      const pending = variances.filter((item) => item.status === 'Open' || item.status === 'Matched')
+      for (const variance of pending) {
+        const note = varianceNotes[variance.id]?.trim() ?? 'Reviewed by preparer during run wizard.'
+        let nextStatus = variance.status
+        if (variance.status === 'Open') {
           const resolved = await resolveVariance(
-            blocker.id,
+            variance.id,
             {
               status: 'Explained',
               note,
@@ -694,12 +701,12 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
         }
 
         if (canApproveVariance(nextStatus)) {
-          await approveVariance(blocker.id, note, accessToken)
+          await approveVariance(variance.id, note, accessToken)
         }
       }
 
       await refreshReconciliationViews(runRecord.id, accessToken)
-      setNotice({ tone: 'success', message: 'All blocker variances were resolved and approved.' })
+      setNotice({ tone: 'success', message: 'All open variances were resolved and approved.' })
     } catch (error) {
       setNotice({ tone: 'error', message: getErrorMessage(error) })
     } finally {
@@ -1080,15 +1087,16 @@ export function NewRunWizardModal({ open, onClose, initialRunId = null, onRunUpd
       return (
         <div className="space-y-6">
           <Text className="text-sm text-zinc-600">
-            Resolve blocker variances and capture notes. This step must be clean before reviewer approval is available.
+            Resolve open variances and capture notes. This step must be clean before reviewer approval is available.
           </Text>
 
           <div className="flex flex-wrap items-center gap-3">
             <Badge color="red">Blockers: {blockers.length}</Badge>
             <Badge color="amber">Warnings: {variances.filter((item) => item.severity === 'WARNING').length}</Badge>
             <Badge color="zinc">Info: {variances.filter((item) => item.severity === 'INFO').length}</Badge>
-            <Button outline disabled={!runRecord || blockers.length === 0 || Boolean(working)} onClick={handleResolveAndApproveBlockers}>
-              {working === 'resolve-blockers' ? 'Resolving blockers...' : 'Resolve + approve blockers'}
+            <Badge color="zinc">Open: {openVariances.length}</Badge>
+            <Button outline disabled={!runRecord || openVariances.length === 0 || Boolean(working)} onClick={handleResolveAndApproveOpenVariances}>
+              {working === 'resolve-open' ? 'Resolving open variances...' : 'Resolve + approve open'}
             </Button>
           </div>
 

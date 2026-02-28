@@ -283,109 +283,108 @@ export default function AppDashboardPage() {
     }
   }, [range, rows])
 
-  if (!session) {
-    return (
-      <div className="space-y-6">
-        <Heading className="text-3xl">Dashboard</Heading>
-        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
-          <Text className="text-zinc-700">Start a new run wizard to begin secure session setup and load live dashboard metrics.</Text>
-          <div className="mt-4">
-            <Button color="dark/zinc" onClick={() => openWizard()}>
-              Start new run
-            </Button>
-          </div>
-        </section>
-        <NewRunWizardModal open={wizardOpen} initialRunId={wizardRunId} onClose={closeWizard} onRunUpdated={refreshDashboard} />
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6">
-      <div>
-        <Heading>{greetingLabel(session.email)}</Heading>
-        <Text className="mt-2 text-zinc-600">Operational overview of recent payroll reconciliation runs.</Text>
-      </div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <h2 className="text-base/7 font-semibold text-zinc-950 sm:text-sm/6">Overview</h2>
-        <div className="w-48">
-          <Select value={range} onChange={(event) => setRange(event.target.value as DateRange)}>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-          </Select>
-        </div>
-      </div>
-      <div className="mt-4 grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.cards.map((card) => (
-          <StatCard
-            key={card.label}
-            title={card.label}
-            value={card.value}
-            change={card.delta.change}
-            context={card.delta.context}
-            tone={card.delta.tone}
-          />
-        ))}
-      </div>
-      <div className="mt-14 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base/7 font-semibold text-zinc-950 sm:text-sm/6">Recent runs</h2>
-        <Button outline onClick={() => openWizard()}>
-          Start new run
-          <ArrowRightIcon data-slot="icon" />
-        </Button>
-      </div>
-
-      {loading ? (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
-          <Text className="text-sm text-zinc-700">Loading dashboard data...</Text>
-        </div>
-      ) : error ? (
-        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
-          <Text className="text-sm text-red-800">{error}</Text>
-        </div>
-      ) : metrics.rowsForTable.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
-          <Text className="text-sm text-zinc-700">No runs found for this profile yet. Start your first run to populate this dashboard.</Text>
-        </div>
+      {!session ? (
+        <>
+          <Heading className="text-3xl">Dashboard</Heading>
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
+            <Text className="text-zinc-700">Start a new run wizard to begin secure session setup and load live dashboard metrics.</Text>
+            <div className="mt-4">
+              <Button color="dark/zinc" onClick={() => openWizard()}>
+                Start new run
+              </Button>
+            </div>
+          </section>
+        </>
       ) : (
-        <Table className="mt-4 [--gutter:--spacing(6)] lg:[--gutter:--spacing(10)]">
-            <TableHead>
-              <TableRow>
-                <TableHeader>Run ID</TableHeader>
-                <TableHeader>Pay date</TableHeader>
-                <TableHeader>Client</TableHeader>
-                <TableHeader>Period</TableHeader>
-                <TableHeader>Status</TableHeader>
-                <TableHeader>Blockers</TableHeader>
-                <TableHeader>Variance total</TableHeader>
-                <TableHeader>Updated</TableHeader>
-                <TableHeader className="min-w-36">Action</TableHeader>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {metrics.rowsForTable.map((row) => (
-                <TableRow key={row.run.id}>
-                  <TableCell className="font-medium tabular-nums">{row.run.id.slice(0, 8)}</TableCell>
-                  <TableCell className="tabular-nums">{formatDate(row.run.pay_date)}</TableCell>
-                  <TableCell>{row.history.clientName}</TableCell>
-                  <TableCell className="tabular-nums">
-                    {formatDate(row.run.pay_period_start)} - {formatDate(row.run.pay_period_end)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge color={statusColor(row.run.status)}>{row.run.status}</Badge>
-                  </TableCell>
-                  <TableCell className="tabular-nums">{row.summary.unresolved_blockers}</TableCell>
-                  <TableCell className="tabular-nums">{toCurrency(row.summary.variance_total, row.history.currency)}</TableCell>
-                  <TableCell className="tabular-nums">{formatDate(row.run.updated_at)}</TableCell>
-                  <TableCell className="min-w-36 whitespace-nowrap">
-                    <Button plain className="whitespace-nowrap" onClick={() => openWizard(row.run.id)}>
-                      Resume
-                    </Button>
-                  </TableCell>
+        <>
+          <div>
+            <Heading>{greetingLabel(session.email)}</Heading>
+            <Text className="mt-2 text-zinc-600">Operational overview of recent payroll reconciliation runs.</Text>
+          </div>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <h2 className="text-base/7 font-semibold text-zinc-950 sm:text-sm/6">Overview</h2>
+            <div className="w-48">
+              <Select value={range} onChange={(event) => setRange(event.target.value as DateRange)}>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+              </Select>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
+            {metrics.cards.map((card) => (
+              <StatCard
+                key={card.label}
+                title={card.label}
+                value={card.value}
+                change={card.delta.change}
+                context={card.delta.context}
+                tone={card.delta.tone}
+              />
+            ))}
+          </div>
+          <div className="mt-14 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-base/7 font-semibold text-zinc-950 sm:text-sm/6">Recent runs</h2>
+            <Button outline onClick={() => openWizard()}>
+              Start new run
+              <ArrowRightIcon data-slot="icon" />
+            </Button>
+          </div>
+
+          {loading ? (
+            <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+              <Text className="text-sm text-zinc-700">Loading dashboard data...</Text>
+            </div>
+          ) : error ? (
+            <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
+              <Text className="text-sm text-red-800">{error}</Text>
+            </div>
+          ) : metrics.rowsForTable.length === 0 ? (
+            <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+              <Text className="text-sm text-zinc-700">No runs found for this profile yet. Start your first run to populate this dashboard.</Text>
+            </div>
+          ) : (
+            <Table className="mt-4 [--gutter:--spacing(6)] lg:[--gutter:--spacing(10)]">
+              <TableHead>
+                <TableRow>
+                  <TableHeader>Run ID</TableHeader>
+                  <TableHeader>Pay date</TableHeader>
+                  <TableHeader>Client</TableHeader>
+                  <TableHeader>Period</TableHeader>
+                  <TableHeader>Status</TableHeader>
+                  <TableHeader>Blockers</TableHeader>
+                  <TableHeader>Variance total</TableHeader>
+                  <TableHeader>Updated</TableHeader>
+                  <TableHeader className="min-w-36">Action</TableHeader>
                 </TableRow>
-              ))}
-            </TableBody>
-        </Table>
+              </TableHead>
+              <TableBody>
+                {metrics.rowsForTable.map((row) => (
+                  <TableRow key={row.run.id}>
+                    <TableCell className="font-medium tabular-nums">{row.run.id.slice(0, 8)}</TableCell>
+                    <TableCell className="tabular-nums">{formatDate(row.run.pay_date)}</TableCell>
+                    <TableCell>{row.history.clientName}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {formatDate(row.run.pay_period_start)} - {formatDate(row.run.pay_period_end)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge color={statusColor(row.run.status)}>{row.run.status}</Badge>
+                    </TableCell>
+                    <TableCell className="tabular-nums">{row.summary.unresolved_blockers}</TableCell>
+                    <TableCell className="tabular-nums">{toCurrency(row.summary.variance_total, row.history.currency)}</TableCell>
+                    <TableCell className="tabular-nums">{formatDate(row.run.updated_at)}</TableCell>
+                    <TableCell className="min-w-36 whitespace-nowrap">
+                      <Button plain className="whitespace-nowrap" onClick={() => openWizard(row.run.id)}>
+                        Resume
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </>
       )}
       <NewRunWizardModal open={wizardOpen} initialRunId={wizardRunId} onClose={closeWizard} onRunUpdated={refreshDashboard} />
     </div>
