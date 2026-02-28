@@ -338,7 +338,7 @@ export default function AppDashboardPage() {
                 <TableHeader>Blockers</TableHeader>
                 <TableHeader>Variance total</TableHeader>
                 <TableHeader>Updated</TableHeader>
-                <TableHeader>Action</TableHeader>
+                <TableHeader className="min-w-36">Action</TableHeader>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -356,8 +356,8 @@ export default function AppDashboardPage() {
                   <TableCell className="tabular-nums">{row.summary.unresolved_blockers}</TableCell>
                   <TableCell className="tabular-nums">{toCurrency(row.summary.variance_total, row.history.currency)}</TableCell>
                   <TableCell className="tabular-nums">{formatDate(row.run.updated_at)}</TableCell>
-                  <TableCell>
-                    <Button plain onClick={() => setWizardOpen(true)}>
+                  <TableCell className="min-w-36 whitespace-nowrap">
+                    <Button plain className="whitespace-nowrap" onClick={() => setWizardOpen(true)}>
                       Open wizard
                     </Button>
                   </TableCell>
