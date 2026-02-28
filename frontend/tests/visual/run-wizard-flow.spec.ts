@@ -66,7 +66,9 @@ test('completes full payroll reconciliation wizard and resumes from dashboard', 
 
   await page.getByRole('button', { name: 'Run reconciliation' }).click()
   await expect(page.getByText(/Reconciliation complete/)).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByText('£300.00')).toBeVisible()
+  const dialog = page.getByRole('dialog', { name: 'New payroll reconciliation run' })
+  await expect(dialog.getByText('Variance total')).toBeVisible()
+  await expect(dialog.getByRole('cell', { name: '£300.00' }).first()).toBeVisible()
   await page.getByRole('button', { name: 'Next' }).click()
 
   await page.getByRole('button', { name: 'Resolve + approve open' }).click()
