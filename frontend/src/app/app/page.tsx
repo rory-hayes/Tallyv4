@@ -1,8 +1,10 @@
 'use client'
 
 import { ArrowRightIcon, ArrowTrendingDownIcon, ArrowTrendingUpIcon, MinusIcon } from '@heroicons/react/20/solid'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
+import { NewRunWizardModal } from '@/components/app/new-run-wizard-modal'
 import { type RunResponse, type RunSummaryResponse, getRun, getRunSummary } from '@/lib/api'
 import { formatDate, formatEUR, formatGBP } from '@/lib/format'
 import { loadRunHistory, upsertRunHistory, type RunHistoryRecord } from '@/lib/run-history'
@@ -75,25 +77,38 @@ function statusColor(status: RunResponse['status']): 'green' | 'amber' | 'red' {
   return 'red'
 }
 
-function nextActionHref(row: DashboardRunRow): string {
-  if (row.summary.unresolved_blockers > 0) {
-    return '/app/workflow?step=variances'
-  }
-  if (row.run.status !== 'Tied') {
-    return '/app/workflow?step=review'
-  }
-  if (!row.history.hasExportPack) {
-    return '/app/workflow?step=export'
-  }
-  return '/app/workflow'
-}
-
 export default function AppDashboardPage() {
+  const router = useRouter()
   const [session, setSession] = useState<SessionState | null>(null)
   const [rows, setRows] = useState<DashboardRunRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [range, setRange] = useState<DateRange>('7d')
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const refreshDashboard = useCallback(() => {
+    setReloadToken((value) => value + 1)
+  }, [])
+
+  const closeWizard = useCallback(() => {
+    setWizardOpen(false)
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('newRun') === '1') {
+      url.searchParams.delete('newRun')
+      const nextQuery = url.searchParams.toString()
+      router.replace(nextQuery ? `${url.pathname}?${nextQuery}` : url.pathname)
+    }
+  }, [router])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('newRun') === '1') {
+      setWizardOpen(true)
+    }
+  }, [])
 
   useEffect(() => {
     const activeSession = loadSession()
@@ -171,7 +186,7 @@ export default function AppDashboardPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [reloadToken])
 
   const metrics = useMemo(() => {
     const now = new Date()
@@ -239,13 +254,14 @@ export default function AppDashboardPage() {
       <div className="space-y-6">
         <Heading className="text-3xl">Dashboard</Heading>
         <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
-          <Text className="text-zinc-700">Start a secure session in the guided run workspace to load live dashboard metrics.</Text>
+          <Text className="text-zinc-700">Start a new run wizard to begin secure session setup and load live dashboard metrics.</Text>
           <div className="mt-4">
-            <Button href="/app/workflow" color="dark/zinc">
-              Open guided run
+            <Button color="dark/zinc" onClick={() => setWizardOpen(true)}>
+              Start new run
             </Button>
           </div>
         </section>
+        <NewRunWizardModal open={wizardOpen} onClose={closeWizard} onRunUpdated={refreshDashboard} />
       </div>
     )
   }
@@ -292,7 +308,7 @@ export default function AppDashboardPage() {
             <Heading className="text-xl">Recent runs</Heading>
             <Text className="mt-1 text-zinc-600">{metrics.periodLabel} with live status and variance totals.</Text>
           </div>
-          <Button href="/app/workflow" outline>
+          <Button outline onClick={() => setWizardOpen(true)}>
             Start new run
             <ArrowRightIcon data-slot="icon" />
           </Button>
@@ -341,8 +357,8 @@ export default function AppDashboardPage() {
                   <TableCell className="tabular-nums">{toCurrency(row.summary.variance_total, row.history.currency)}</TableCell>
                   <TableCell className="tabular-nums">{formatDate(row.run.updated_at)}</TableCell>
                   <TableCell>
-                    <Button plain href={nextActionHref(row)}>
-                      Continue
+                    <Button plain onClick={() => setWizardOpen(true)}>
+                      Open wizard
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -351,6 +367,7 @@ export default function AppDashboardPage() {
           </Table>
         )}
       </section>
+      <NewRunWizardModal open={wizardOpen} onClose={closeWizard} onRunUpdated={refreshDashboard} />
     </div>
   )
 }

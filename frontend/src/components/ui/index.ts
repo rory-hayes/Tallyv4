@@ -1,6 +1,7 @@
 export { Badge } from './badge'
 export { Button } from './button'
 export { Divider } from './divider'
+export { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from './dialog'
 export { Description, ErrorMessage, Field, FieldGroup, Fieldset, Label, Legend } from './fieldset'
 export { Heading } from './heading'
 export { Input } from './input'
